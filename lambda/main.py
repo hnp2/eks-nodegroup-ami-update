@@ -78,16 +78,16 @@ def get_nodegroup_launch_template(cluster_name: str, nodegroup_name: str):
         return None
 
 
-def update_launch_template(launch_template_id: str, image_id: str):
+def update_launch_template(launch_template_id: str, image_id: str, launch_template_data: dict):
     client = boto3.client('ec2')
-    response = client.modify_launch_template(
+    launch_template_data['ImageId'] = image_id
+    response = client.create_launch_template_version(
         LaunchTemplateId=launch_template_id,
-        LaunchTemplateData={
-            'ImageId': image_id
-        }
+        VersionDescription=f'Patch AMI {image_id}',
+        LaunchTemplateData=launch_template_data,
     )
 
-    return response['LaunchTemplate']['LaunchTemplateId']
+    return response['LaunchTemplateVersion']['LaunchTemplateId']
 
 
 def get_launch_template_ami(launch_template_id: str):
@@ -98,6 +98,18 @@ def get_launch_template_ami(launch_template_id: str):
 
     if 'LaunchTemplateVersions' in response and len(response['LaunchTemplateVersions']) > 0:
         return response['LaunchTemplateVersions'][0]['LaunchTemplateData']['ImageId']
+    else:
+        return None
+
+
+def get_launch_template_data(launch_template_id: str):
+    client = boto3.client('ec2')
+    response = client.describe_launch_template_versions(
+        LaunchTemplateId=launch_template_id,
+    )
+
+    if 'LaunchTemplateVersions' in response and len(response['LaunchTemplateVersions']) > 0:
+        return response['LaunchTemplateVersions'][0]['LaunchTemplateData']
     else:
         return None
 
@@ -153,14 +165,18 @@ def main(cluster_name: str = None):
                             logger.info("Launch template uses AMI: %s, the latest AMI: %s, updating launch template.",
                                         latest_ami, launch_template_ami)
 
+                            # Fetch latest template configuration
+                            launch_template_data = get_launch_template_data(launch_template_id)
+
                             # Update the launch template with the latest AMI
-                            updated_launch_template_id = update_launch_template(launch_template_id, latest_ami)
+                            updated_launch_template_id = update_launch_template(
+                                launch_template_id, latest_ami, launch_template_data)
 
                             logger.info("Updating nodegroup %s to use launch template %s.",
                                         nodegroup, updated_launch_template_id)
 
                             # Update the nodegroup with the latest launch template
-                            updated_nodegroup_id = update_nodegroup(cluster_name, nodegroup, launch_template_id)
+                            updated_nodegroup_id = update_nodegroup(cluster_name, nodegroup, updated_launch_template_id)
 
                             logger.info("Node Group %s updated with the latest AMI.", updated_nodegroup_id)
                         else:
