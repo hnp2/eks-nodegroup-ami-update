@@ -41,6 +41,9 @@ data "aws_iam_policy_document" "main" {
 
     actions = [
       "ec2:DescribeImages",
+      # Required by AWS in order to use a new launch template https://docs.aws.amazon.com/autoscaling/ec2/userguide/ts-as-launch-template.html
+      "ec2:CreateTags",
+      "ec2:RunInstances"
     ]
 
     resources = ["*"]
@@ -61,6 +64,7 @@ data "aws_iam_policy_document" "main" {
 
     actions = [
       "ec2:ModifyLaunchTemplate",
+      "CreateLaunchTemplateVersion"
     ]
 
     resources = [
