@@ -87,7 +87,7 @@ def update_launch_template(launch_template_id: str, image_id: str, launch_templa
         LaunchTemplateData=launch_template_data,
     )
 
-    return response['LaunchTemplateVersion']['LaunchTemplateId']
+    return response['LaunchTemplateVersion']['LaunchTemplateId'], response['LaunchTemplateVersion']['VersionNumber']
 
 
 def get_launch_template_ami(launch_template_id: str):
@@ -115,7 +115,7 @@ def get_launch_template_data(launch_template_id: str):
 
 
 def update_nodegroup(
-        cluster_name: str, nodegroup_name: str, launch_template_id: str, force_update: bool = True):
+        cluster_name: str, nodegroup_name: str, launch_template_id: str, launch_template_version: str, force_update: bool = True):
     client = boto3.client('eks')
     response = client.update_nodegroup_version(
         clusterName=cluster_name,
@@ -123,6 +123,7 @@ def update_nodegroup(
         force=force_update,
         launchTemplate={
             'id': launch_template_id,
+            'version': launch_template_version
         }
     )
 
@@ -146,46 +147,51 @@ def main(cluster_name: str = None):
             logger.info("Associated Node Groups found")
 
             for nodegroup in nodegroups:
-                logger.info("Node Group Name: %s", nodegroup)
+                logger.info(f'Node Group Name: {nodegroup}')
 
                 # Get the launch template for the node group
                 launch_template_id = get_nodegroup_launch_template(cluster_name, nodegroup)
 
                 if launch_template_id:
-                    logger.info("Launch Template ID: %s", launch_template_id)
+                    logger.info(f'Launch Template ID: {launch_template_id}')
 
                     launch_template_ami = get_launch_template_ami(launch_template_id)
                     current_ami_parameters = describe_ami(launch_template_ami)
 
                     # Get the latest AMI for the EKS version
                     latest_ami = get_latest_ami_for_eks(cluster['version'], current_ami_parameters['Architecture'])
+                    logger.info(f'Found AMI as latest {latest_ami}')
 
                     if latest_ami:
                         if latest_ami != launch_template_ami:
                             logger.info("Launch template uses AMI: %s, the latest AMI: %s, updating launch template.",
-                                        latest_ami, launch_template_ami)
+                                        launch_template_ami, latest_ami)
 
                             # Fetch latest template configuration
                             launch_template_data = get_launch_template_data(launch_template_id)
 
                             # Update the launch template with the latest AMI
-                            updated_launch_template_id = update_launch_template(
+                            updated_launch_template_id, updated_launch_template_version = update_launch_template(
                                 launch_template_id, latest_ami, launch_template_data)
 
                             logger.info("Updating nodegroup %s to use launch template %s.",
                                         nodegroup, updated_launch_template_id)
 
                             # Update the nodegroup with the latest launch template
-                            updated_nodegroup_id = update_nodegroup(cluster_name, nodegroup, updated_launch_template_id)
+                            updated_nodegroup_id = update_nodegroup(
+                                cluster_name, nodegroup, updated_launch_template_id, updated_launch_template_version)
 
                             logger.info("Node Group %s updated with the latest AMI.", updated_nodegroup_id)
                         else:
-                            logger.info("Launch template is already using the latest AMI.")
+                            logger.info(f'Launch template {launch_template_id} is already using the latest AMI '
+                                        f'{latest_ami}')
+
                     else:
                         logger.info(f'No AMI found for EKS version {cluster["version"]}.')
                 else:
                     logger.info("Node Group does not have associated launch template.")
 
+                    # TODO: Add update nodegroup step without parameters
                 logger.info("---")
         else:
             logger.info("No associated node groups found.")
