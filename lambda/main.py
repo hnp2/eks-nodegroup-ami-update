@@ -123,7 +123,7 @@ def update_nodegroup(
         force=force_update,
         launchTemplate={
             'id': launch_template_id,
-            'version': launch_template_version
+            'version': str(launch_template_version)
         }
     )
 
